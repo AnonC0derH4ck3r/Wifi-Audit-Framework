@@ -1,0 +1,7 @@
+# following files will not be uploaded by git
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.txt
+#oui_file/
