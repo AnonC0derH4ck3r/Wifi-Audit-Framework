@@ -24,6 +24,8 @@ class WirelessAuditEngine:
         self.seen_bssids    = set()
         self.results        = []
         self.client_results = []
+        self.probe_results = []
+        self.probe_index   = {}
         self.seen_clients   = set()
         # tracks current status per client mac: "Connected" | "Disconnected"
         self.client_status  = {}
@@ -69,7 +71,9 @@ class WirelessAuditEngine:
         # Presence of this IE tells the AP we can handle 802.11n,
         # which may cause it to include more detail in the Probe Response.
         ht_cap = b'\x01\x00' + b'\xff' * 2 + b'\x00' * 22
-
+        # it is doing it's job well.
+        # already sending required params to make the AP being able to trust a probe request
+        # by setting supported, extended rates, caps
         probe = (
             RadioTap() /
             Dot11(
@@ -739,6 +743,76 @@ class WirelessAuditEngine:
         print(tabulate(sec_rows, headers=["Field", "Value"], tablefmt="pretty"))
         print()
         print(tabulate(wps_rows, headers=["WPS Field", "Value"], tablefmt="pretty"))
+
+    def probe_request(self, pkt):
+        """Packet handler — call via scapy sniff(prn=engine.probe_request)."""
+        if not pkt.haslayer(Dot11):
+            return
+
+        dot11 = pkt[Dot11]
+
+        # Management frame (type 0), subtype 4 = Probe Request
+        if dot11.type != 0x00 or dot11.subtype != 0x04:
+            return
+
+        src_mac = dot11.addr2
+        if not src_mac or not self.is_unicast(src_mac):
+            return
+
+        # Walk IEs to find SSID (Tag 0) — skip wildcard (empty) probes
+        ssid = None
+        elt = pkt.getlayer(Dot11Elt)
+        while elt:
+            if elt.ID == 0:
+                raw = bytes(elt.info)
+                if raw:  # empty = wildcard broadcast probe, ignore
+                    try:
+                        ssid = raw.decode("utf-8", errors="replace")
+                    except Exception:
+                        ssid = raw.hex()
+                break
+            elt = elt.payload.getlayer(Dot11Elt)
+
+        if not ssid:
+            return
+
+        now = time.strftime("%H:%M:%S")
+        key = (src_mac, ssid)
+
+        if key in self.probe_index:
+            # Already seen — bump count and refresh timestamp
+            idx = self.probe_index[key]
+            self.probe_results[idx][3] += 1
+            self.probe_results[idx][4] = now
+        else:
+            # First time — add new row
+            vendor = self._lookup_oui(src_mac)
+            row = [src_mac, vendor, ssid, 1, now]
+            self.probe_index[key] = len(self.probe_results)
+            self.probe_results.append(row)
+
+        self.render_probe_table()
+
+    def render_probe_table(self):
+        display_rows = []
+        for r in self.probe_results:
+            src_mac, vendor, ssid, count, last_seen = r
+            display_rows.append([
+                f"{UI.CYAN}{src_mac}{UI.RESET}",
+                f"{UI.DIM}{vendor}{UI.RESET}",
+                f"{UI.YELLOW}{ssid}{UI.RESET}",
+                f"{UI.GREEN}{count}{UI.RESET}",
+                f"{UI.DIM}{last_seen}{UI.RESET}",
+            ])
+
+        os.system('clear')
+        UI.print_banner()
+        print(tabulate(
+            display_rows,
+            headers=["SRC MAC", "Vendor", "SSID (Probed)", "Count", "Last Seen"],
+            tablefmt="pretty",
+        ))
+        print(f"\n  {UI.DIM}Listening for directed Probe Requests — press CTRL+C to stop.{UI.RESET}\n")
 
     def render_client_table(self):
         STATUS_COLOR = {
