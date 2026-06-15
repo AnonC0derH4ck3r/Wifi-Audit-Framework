@@ -298,6 +298,31 @@ def main():
                 print()
                 UI.ok("Assessment stopped — returning to menu.")
                 continue  # <── back to top of while loop → show menu again
+        elif user_choice == 6:
+            UI.section("Probe Request Listener (PNL)")
+            UI.info("Press Ctrl+C to stop and return to the main menu...")
+
+            stop_sniff = threading.Event()
+            sniff_thread = threading.Thread(
+                target=sniff,
+                kwargs=dict(
+                    iface=iface,
+                    prn=audit.probe_request,
+                    store=0,
+                    stop_filter=lambda _pkt: stop_sniff.is_set(),
+                ),
+                daemon=True,
+            )
+            sniff_thread.start()
+            try:
+                sniff_thread.join()
+            except KeyboardInterrupt:
+                stop_sniff.set()
+                sniff_thread.join()
+                audit.stop_hopper.set()
+                print()
+                # UI.ok(f"Listener stopped. {len(audit.probe_request)} unique (MAC, SSID) pair(s) captured — returning to menu.")
+                continue
 
         else:
             print()
