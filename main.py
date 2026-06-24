@@ -254,14 +254,11 @@ def main():
                 continue  # <── back to top of while loop → show menu again
 
         elif user_choice == 3:
-            # ── Guard: AP scan must have been run first ────────────────────
             if not audit.results:
                 UI.error("No AP data found.")
                 UI.warn("Please run option 1 (Discover Access Points) first, then retry.")
                 audit.stop_hopper.set()
-                continue  # back to menu instead of crashing out
-
-            # ── Let user pick the target AP from the discovered list ───────
+                continue
             UI.section("Vulnerability Assessment")
             a_bssid, a_channel = UI.select_ap_from_results(audit.results, audit.table_headers)
             if not a_bssid:
@@ -269,11 +266,25 @@ def main():
                 audit.stop_hopper.set()
                 continue
 
+            InterfaceManager.set_channel(iface, a_channel)
+
+            UI.info("Sending probe request and checking for a response...")
+            got_response = audit.send_probe_request(ssid=a_bssid, iface=iface, channel=a_channel)
+
+            if not got_response:
+                UI.warn(
+                    "AP did not respond to the Probe Request. It may have "
+                    "SSID broadcast disabled, be out of range, on a different "
+                    "channel than expected, or filtering probe requests. "
+                    "Check main.py option 1 results for the correct channel/BSSID, "
+                    "and try moving closer to the AP before retrying."
+                )
+                audit.stop_hopper.set()
+                continue
+
+            UI.ok("AP responded — proceeding with full assessment.")
             UI.info("Press Ctrl+C to stop and return to the main menu...")
 
-            # Sniff for the Probe Response (type 0 / subtype 5) — timeout is short.
-            # Same threaded sniff pattern — Ctrl+C loops back to the menu.
-            audit.send_probe_request(ssid=a_bssid, iface=iface)
             stop_sniff = threading.Event()
             sniff_thread = threading.Thread(
                 target=sniff,
@@ -282,22 +293,20 @@ def main():
                     prn=lambda pkt: audit.vuln_assessment(pkt, s_bssid=a_bssid, iface=iface, channel=a_channel),
                     store=False,
                     timeout=10,
-                    # scapy's stop_filter is polled after every packet;
-                    # when stop_sniff is set the thread exits cleanly.
                     stop_filter=lambda _pkt: stop_sniff.is_set(),
                 ),
                 daemon=True,
             )
             sniff_thread.start()
             try:
-                sniff_thread.join()  # main thread blocks here — Ctrl+C is catchable
+                sniff_thread.join()
             except KeyboardInterrupt:
                 stop_sniff.set()
                 sniff_thread.join()
                 audit.stop_hopper.set()
                 print()
                 UI.ok("Assessment stopped — returning to menu.")
-                continue  # <── back to top of while loop → show menu again
+                continue
         elif user_choice == 6:
             UI.section("Probe Request Listener (PNL)")
             UI.info("Press Ctrl+C to stop and return to the main menu...")
