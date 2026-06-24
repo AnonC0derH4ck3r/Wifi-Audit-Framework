@@ -47,51 +47,127 @@ class WirelessAuditEngine:
         else:
             UI.warn("ieee-oui.txt not found — vendor names will show as 'Unknown'.")
 
-    def send_probe_request(self, ssid: str, iface: str):
+    # def send_probe_request(self, ssid: str, iface: str):
+    #     """
+    #     Craft and inject a directed Probe Request for `ssid` on `iface`.
+
+    #     The AP will unicast a Probe Response back, which vuln_assessment()
+    #     will pick up and parse.  We use the broadcast destination (ff:ff:...)
+    #     and a randomised source so the real NIC MAC doesn't matter.
+    #     """
+    #     from scapy.all import sendp, RandMAC
+    #     import struct
+
+    #     src_mac = RandMAC()
+
+    #     # Supported Rates IE (Tag 1) — standard 802.11b/g rates
+    #     # Each byte = rate * 2; the MSB set means "basic rate"
+    #     supported_rates = b'\x82\x84\x8b\x96\x0c\x12\x18\x24'
+
+    #     # Extended Supported Rates IE (Tag 50) — 802.11g extras
+    #     ext_rates = b'\x30\x48\x60\x6c'
+
+    #     # HT Capabilities IE (Tag 45) — 26-byte minimal placeholder
+    #     # Presence of this IE tells the AP we can handle 802.11n,
+    #     # which may cause it to include more detail in the Probe Response.
+    #     ht_cap = b'\x01\x00' + b'\xff' * 2 + b'\x00' * 22
+    #     # it is doing it's job well.
+    #     # already sending required params to make the AP being able to trust a probe request
+    #     # by setting supported, extended rates, caps
+    #     probe = (
+    #         RadioTap() /
+    #         Dot11(
+    #             type=0,          # Management
+    #             subtype=4,       # Probe Request
+    #             addr1="ff:ff:ff:ff:ff:ff",   # Destination — broadcast
+    #             addr2=src_mac,               # Source — us (randomised)
+    #             addr3="ff:ff:ff:ff:ff:ff",   # BSSID — broadcast (directed by SSID IE)
+    #         ) /
+    #         Dot11Elt(ID=0,  info=ssid.encode()) /       # SSID IE (Tag 0)
+    #         Dot11Elt(ID=1,  info=supported_rates) /     # Supported Rates (Tag 1)
+    #         Dot11Elt(ID=50, info=ext_rates) /           # Extended Rates (Tag 50)
+    #         Dot11Elt(ID=45, info=ht_cap)                # HT Capabilities (Tag 45)
+    #     )
+
+    #     # Send 3 times — some APs rate-limit or drop the first frame
+    #     sendp(probe, iface=iface, count=1, inter=0.1, verbose=False)
+
+    #     UI.ok(f"Probe Request sent for SSID '{ssid}' on {iface}")
+    def send_probe_request(self, ssid: str, iface: str, channel: int = None, timeout: float = 3.0) -> bool:
         """
         Craft and inject a directed Probe Request for `ssid` on `iface`.
-
         The AP will unicast a Probe Response back, which vuln_assessment()
         will pick up and parse.  We use the broadcast destination (ff:ff:...)
         and a randomised source so the real NIC MAC doesn't matter.
+
+        Returns True if a matching Probe Response (type=0, subtype=5) was
+        sniffed from the target BSSID within `timeout` seconds, False otherwise.
         """
-        from scapy.all import sendp, RandMAC
-        import struct
+        from scapy.all import sendp, sniff, RandMAC
 
         src_mac = RandMAC()
-
         # Supported Rates IE (Tag 1) — standard 802.11b/g rates
         # Each byte = rate * 2; the MSB set means "basic rate"
         supported_rates = b'\x82\x84\x8b\x96\x0c\x12\x18\x24'
-
         # Extended Supported Rates IE (Tag 50) — 802.11g extras
         ext_rates = b'\x30\x48\x60\x6c'
-
         # HT Capabilities IE (Tag 45) — 26-byte minimal placeholder
-        # Presence of this IE tells the AP we can handle 802.11n,
-        # which may cause it to include more detail in the Probe Response.
         ht_cap = b'\x01\x00' + b'\xff' * 2 + b'\x00' * 22
-        # it is doing it's job well.
-        # already sending required params to make the AP being able to trust a probe request
-        # by setting supported, extended rates, caps
+
         probe = (
             RadioTap() /
             Dot11(
                 type=0,          # Management
                 subtype=4,       # Probe Request
-                addr1="ff:ff:ff:ff:ff:ff",   # Destination — broadcast
-                addr2=src_mac,               # Source — us (randomised)
-                addr3="ff:ff:ff:ff:ff:ff",   # BSSID — broadcast (directed by SSID IE)
+                addr1="ff:ff:ff:ff:ff:ff",
+                addr2=src_mac,
+                addr3="ff:ff:ff:ff:ff:ff",
             ) /
-            Dot11Elt(ID=0,  info=ssid.encode()) /       # SSID IE (Tag 0)
-            Dot11Elt(ID=1,  info=supported_rates) /     # Supported Rates (Tag 1)
-            Dot11Elt(ID=50, info=ext_rates) /           # Extended Rates (Tag 50)
-            Dot11Elt(ID=45, info=ht_cap)                # HT Capabilities (Tag 45)
+            Dot11Elt(ID=0,  info=ssid.encode()) /
+            Dot11Elt(ID=1,  info=supported_rates) /
+            Dot11Elt(ID=50, info=ext_rates) /
+            Dot11Elt(ID=45, info=ht_cap)
         )
 
+        # --- Set up a short-lived sniff BEFORE sending, so we don't race the AP --- #
+        responded = {"flag": False}
+
+        def _watch(pkt):
+            if not pkt.haslayer(Dot11):
+                return
+            d = pkt.getlayer(Dot11)
+            if d.type == 0x00 and d.subtype == 0x05 and d.addr2 == ssid_bssid:
+                responded["flag"] = True
+                return True  # stop_filter truthy → sniff() returns immediately
+
+        # `ssid` here is actually treated as the target SSID for the IE, but the
+        # Probe Response is matched by BSSID, not SSID — so the caller must pass
+        # the BSSID as `ssid` (as main.py already does: send_probe_request(ssid=a_bssid, ...))
+        ssid_bssid = ssid
+
+        sniff_thread = threading.Thread(
+            target=lambda: sniff(
+                iface=iface,
+                prn=_watch,
+                store=False,
+                timeout=timeout,
+                stop_filter=lambda pkt: responded["flag"],
+            ),
+            daemon=True,
+        )
+        sniff_thread.start()
+
         # Send 3 times — some APs rate-limit or drop the first frame
-        sendp(probe, iface=iface, count=3, inter=0.1, verbose=False)
-        UI.ok(f"Probe Request sent for SSID '{ssid}' on {iface}")
+        sendp(probe, iface=iface, count=1, inter=0.1, verbose=False)
+
+        sniff_thread.join(timeout=timeout + 0.5)
+
+        if responded["flag"]:
+            UI.ok(f"Probe Request sent for SSID '{ssid}' on {iface} — AP responded.")
+        else:
+            UI.warn(f"Probe Request sent for SSID '{ssid}' on {iface} — no response received.")
+
+        return responded["flag"]
 
     def _lookup_oui(self, mac: str) -> str:
         if not mac:
