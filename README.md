@@ -26,6 +26,7 @@ This tool is intended **strictly for authorised penetration testing and security
 - **Access Point Discovery** — Passive beacon frame sniffing with live table output. Extracts BSSID, SSID, channel, encryption, PMF (MFPC/MFPR), WPS status, DTIM period, group cipher, AKM suite, WPA1 downgrade detection, beacon interval, RRM (802.11k), BSS Transition (802.11v), and TSF uptime.
 - **Connected Client Enumeration** — Identifies associated clients by inspecting data frames, EAPOL (4-way handshake), association responses, deauth, and disassoc frames. Tracks live Connected / Disconnected status per client.
 - **Vulnerability Assessment** — Sends directed Probe Requests to a target AP and parses the Probe Response for a deep security profile: PMF state, group cipher, AKM suite, WPA1 downgrade risk, RRM/BSS-Transition support, and full WPS TLV breakdown (version, state, method, UUID-E, device info, setup-lock status).
+- **Rogue Access Point — Evil Twin with Selectable Captive Portal (NEW)** — Mirrors `wpf_complete.py` Evil Twin (Phase 3c) verbatim `hostapd`/`dnsmasq`/`iptables`/`mitmproxy`/`Flask` logic. Lets operator choose phishing template (`google` / `microsoft` / `instagram`) from `captive-portal-pages/<name>/index.html`. Includes persistent-internet fixes: `nmcli managed no`, `keepalive` re-assert, captive-probe `204` handling, `bcrypt` patch, and post-login internet guarantee. See [Evil Twin Details](#evil-twin--rogue-ap-details) below.
 - **PNL Extractor** — Passively captures directed Probe Requests from nearby devices to reconstruct their Preferred Network List (PNL) — the set of SSIDs a device has previously joined and will auto-associate with.
 - **OUI Vendor Lookup** — Resolves AP and client MAC prefixes to vendor names using the IEEE OUI database.
 - **Channel Hopper** — Threaded channel hopper supporting 2.4 GHz, 5 GHz, or interleaved dual-band sweeps.
@@ -39,12 +40,19 @@ This tool is intended **strictly for authorised penetration testing and security
 
 ```
 wifi_toolkit/
-├── main.py               # Entry point — arg parsing, interface setup, sniff dispatch
+├── main.py               # Entry point — arg parsing, interface setup, sniff dispatch (option 5 Evil Twin now active)
 ├── config.py             # Constants: channel maps, interface type names, banner
 ├── ui.py                 # Terminal UI: colours, logging helpers, menu
 ├── dependencies.py       # Auto-installer for scapy, pyroute2, tabulate
 ├── interface_manager.py  # NL80211 interface control: mode, channel, state
-└── audit_engine.py       # Core engine: packet parsing, client tracking, live tables
+├── audit_engine.py       # Core engine: packet parsing, client tracking, live tables
+├── evil_twin.py          # NEW — Rogue AP module (hostapd/dnsmasq/iptables/mitmproxy/Flask + portal loader + keepalive)
+├── captive-portal-pages/ # NEW — Selectable phishing templates
+│   ├── google/index.html     # Google Sign-in clone (self-contained, {ssid} placeholder)
+│   ├── microsoft/index.html  # Microsoft / Azure AD clone (from wpf_complete PORTAL_HTML)
+│   └── instagram/index.html  # Instagram Login clone
+├── wpf_complete.py       # Standalone full framework (reference for Evil Twin logic)
+└── wpf_results.db        # SQLite results (APs, clients, handshakes, credentials, http_traffic)
 ```
 
 ---
@@ -54,7 +62,8 @@ wifi_toolkit/
 - **OS:** Linux (tested on Kali / Ubuntu)
 - **Python:** 3.8+
 - **Privileges:** Must be run as `root`
-- **Hardware:** Wireless adapter with monitor mode support
+- **Hardware:** Wireless adapter with monitor mode support + second adapter recommended for Active Evil Twin; `hostapd`, `dnsmasq`, `iptables`, `iproute2` required for Rogue AP
+- **System deps for Evil Twin:** `hostapd`, `dnsmasq`, `iptables`, `iw`, `ip`, `sysctl`, `mitmdump` (mitmproxy), `NetworkManager` (`nmcli`)
 
 ### Python Dependencies
 
@@ -65,6 +74,8 @@ Auto-installed if missing:
 | `scapy` | Packet capture and parsing |
 | `pyroute2` | NL80211 / Netlink interface control |
 | `tabulate` | Live table rendering |
+| `flask` | **NEW** — Captive portal web server (required for option 5) |
+| `mitmproxy` | **NEW** — Transparent HTTP/S sniffer (`mitmdump`) for Evil Twin (optional but recommended) |
 
 ### Optional
 
@@ -83,6 +94,17 @@ cd wifi-audit-framework
 ```
 
 No manual `pip install` needed — missing dependencies are detected and installed automatically on first run.
+
+For Evil Twin, ensure system deps are present:
+
+```bash
+sudo apt update && sudo apt install -y hostapd dnsmasq iptables iproute2 iw mitmproxy
+pip install flask mitmproxy  # if not auto-installed
+# Fix bcrypt warning that can kill mitmproxy (handled automatically, but manual fix):
+pip install --upgrade passlib
+# or
+pip install bcrypt==4.0.1
+```
 
 Optionally, download the IEEE OUI database for vendor resolution:
 
@@ -125,21 +147,62 @@ sudo python3 main.py --iface wlan0 --channels 1,6,11
 
 # Lock to a single channel (no hopping)
 sudo python3 main.py --iface wlan0 --channels 6 --no-hop
+
+# Evil Twin — will prompt for SSID/channel/portal afterwards
+sudo python3 main.py --iface wlan0
+# then choose 5 → clone existing AP or manual → pick google/microsoft/instagram → AP iface / uplink
 ```
 
 ---
 
 ## Menu Options
 
-| Option | Description |
-|---|---|
-| `1` | Discover Access Points (beacon frame scan) |
-| `2` | Enumerate Connected Devices (data frame + EAPOL analysis) |
-| `3` | Vulnerability Assessment (Probe Response deep inspection) |
-| `4` | Deauthentication Attack *(coming soon)* |
-| `5` | Rogue Access Point *(coming soon)* |
-| `6` | PNL Extractor (Preferred Network List sniffing) |
-| `0` | Exit |
+| Option | Description | Status |
+|---|---|---|
+| `1` | Discover Access Points (beacon frame scan) | ✅ Active |
+| `2` | Enumerate Connected Devices (data frame + EAPOL analysis) | ✅ Active |
+| `3` | Vulnerability Assessment (Probe Response deep inspection) | ✅ Active |
+| `4` | Deauthentication Attack (broadcast / unicast) | ✅ Active |
+| `5` | **Rogue Access Point — Evil Twin + Captive Portal** (selectable `google`/`microsoft`/`instagram` from `captive-portal-pages/`) | ✅ **NEW — Active** (was `coming soon`) |
+| `6` | PNL Extractor (Preferred Network List sniffing) | ✅ Active |
+| `0` | Exit | ✅ Active |
+
+---
+
+## Evil Twin / Rogue AP Details
+
+**Module:** `evil_twin.py` — faithful port of `wpf_complete.py` Evil Twin (Phase 3c). `hostapd` commands are kept **exactly** as in `wpf_complete.py:1940` (`interface`, `driver nl80211`, `ssid`, `hw_mode g`, `channel`, `macaddr_acl 0`, `ignore_broadcast_ssid 0`, `auth_algs 1`, `wmm_enabled 0`, optional `bssid`).
+
+**Flow (option `5`):**
+1. **Target selection** — if APs were discovered via `1`, offers to clone `SSID/BSSID/channel` (handles hidden SSIDs) or manual entry + optional `BSSID` spoof.
+2. **Portal selection** — scans `captive-portal-pages/` for subdirs with `index.html` (built-ins: `google`, `microsoft`, `instagram`). Shows table with `Template` / `Style` / `Path`, prompts `1-N`. Template is loaded and `{ssid}` replaced.
+3. **Uplink / AP iface** — prompts for uplink (auto-detected via `ip route show default`) and AP interface (defaults to framework iface).
+4. **Launch** — writes `/tmp/wpf_hostapd.conf` + `/tmp/wpf_dnsmasq.conf` (`dhcp-range 10.0.0.2-10.0.0.254 12h`, `dhcp-option 3/6 → 10.0.0.1`, `server 8.8.8.8/1.1.1.1`, hijacks `captive.apple.com`, `connectivitycheck.gstatic.com`, `detectportal.firefox.com`, `msftconnecttest.com`, `clients3.google.com` → `10.0.0.1`), sets `10.0.0.1/24` on AP iface, `sysctl net.ipv4.ip_forward=1`, `iptables` NAT/REDIRECT (see below), kills old `hostapd/dnsmasq`, starts `hostapd`, `dnsmasq --no-daemon`, `mitmdump --mode transparent --listen-port 8080 -s /tmp/wpf_mitm_addon.py`, and `Flask` on `:5000` serving the chosen portal for all `host`/`path` (catch-all) and `POST /login` harvesting to `wpf_results.db:credentials` + `captive-portal-creds.log` → `302` to `https://www.google.com/`.
+
+**Iptables (verbatim from `wpf_complete.py` plus persistence fixes):**
+* `iptables -F` / `-t nat -F` / `-t mangle -F` / `-X` flush once
+* `sysctl -w net.ipv4.ip_forward=1` (+ `conf.all/default.forwarding=1` re-asserted)
+* `iptables -P FORWARD ACCEPT` / `-P INPUT ACCEPT`
+* `INPUT -i <ap> -p udp/tcp --dport 53/67/68/5000/8080 ACCEPT` (survives `INPUT DROP`)
+* `POSTROUTING -s 10.0.0.0/24 -o <uplink> -j MASQUERADE` (+ fallback generic)
+* `FORWARD -i <uplink> -o <ap> -m state RELATED,ESTABLISHED ACCEPT` + `FORWARD -i <ap> -o <uplink> ACCEPT` (`-I` so not shadowed)
+* `PREROUTING -i <ap> -p tcp --dport 80 ! -d 10.0.0.1 -j REDIRECT --to-port 8080` (to mitmproxy)
+* `PREROUTING -i <ap> -p tcp --dport 443 ! -d 10.0.0.1 -j REDIRECT --to-port 8080`
+* `PREROUTING -i <ap> -p tcp --dport 80 -d 10.0.0.1 -j REDIRECT --to-port 5000` (to Flask)
+
+**Persistence Fixes (fixes “internet works ~60-180s then stops”):**
+* **`nmcli dev set <ap> managed no`** before `hostapd` + restore on `stop()` — prevents NetworkManager reclaiming `10.0.0.1/24` after 60-90s.
+* **`bind-dynamic` + `except-interface lo` + `listen-address 10.0.0.1`** in `dnsmasq` + `log-facility=/tmp/wpf_dnsmasq.log` — survives brief IP missing and `systemd-resolved:53` race (auto `systemctl stop systemd-resolved` retry).
+* **Keepalive thread every 10s** (`_keepalive_loop`) — re-adds `10.0.0.1/24` if lost, re-asserts `ip_forward=1`, `iptables -C` → re-add if `firewalld/ufw` flushed, auto-restarts `dnsmasq` (max 2) and `mitmproxy` (max 2, patched `bcrypt`), logs `hostapd` death once with `/tmp/wpf_hostapd.log` tail (no spam).
+* **Captive-probe `204` handling** — `CAPTIVE_HOSTS` / `CAPTIVE_PATHS` (`generate_204`, `hotspot-detect.html`, `connecttest.txt` etc.) via `_is_captive_probe()`. Unauth probe → portal (triggers OS popup), auth probe (IP in `_authenticated_ips` after `POST /login`) → `204 No Content` with `Cache-Control: no-cache` so OS marks `Connected` and never throttles. Normal GW traffic for auth IP → `302` to Google.
+* **`_patch_bcrypt()`** — patches `passlib/handlers/bcrypt.py` `__about__` → `getattr(..., '4.0.1')` for `bcrypt 4.x`, suppresses `PYTHONWARNINGS`, filters `CryptographyDeprecationWarning` — fixes `mitmproxy` crash `module 'bcrypt' has no attribute '__about__'` that blackholed `80/443`.
+* **Post-login internet guarantee** — `login()` marks IP auth, checks `mitm_alive`; if `mitm` dead, deletes `REDIRECT` to `8080` and ensures `MASQUERADE` so client still gets direct NAT internet (keepalive will restart `mitm` and re-add `REDIRECT`).
+
+**Logs & Debugging:**
+* `cat /tmp/wpf_hostapd.log` / `cat /tmp/wpf_dnsmasq.log` on `hostapd/dnsmasq` exit 1
+* `ss -tulpn | grep :53` → free with `systemctl stop systemd-resolved`
+* `hostapd -d /tmp/wpf_hostapd.conf` / `dmesg` for driver/channel errors (try channel 1/6/11, remove `bssid` spoof if driver rejects)
+* `iptables -t nat -S` / `cat /proc/sys/net/ipv4/ip_forward` for NAT
 
 ---
 
@@ -184,6 +247,19 @@ sudo python3 main.py --iface wlan0 --channels 6 --no-hop
 | `SSID (Probed)` | Network name the device is actively seeking |
 | `Count` | Number of probe requests seen for this (MAC, SSID) pair |
 | `Last Seen` | Timestamp of the most recent probe (`HH:MM:SS`) |
+
+### Evil Twin Captured Credentials
+
+| Field | Description |
+|---|---|
+| `Portal` | Template used (`google`/`microsoft`/`instagram`) |
+| `SSID` | Cloned SSID |
+| `Username` | Submitted `username`/`email` |
+| `Password` | Submitted `password` |
+| `Client IP` | `10.0.0.x` of the victim |
+| `Source` | `captive_portal:<portal>:<ip>` or `mitmproxy:<host>` in `wpf_results.db:credentials` + `mitm` `http_traffic` |
+
+Live console also prints `⚡ CREDENTIAL HARVESTED` with `Portal/SSID/User/Password/Client`.
 
 ---
 
@@ -240,3 +316,14 @@ Output tables use ANSI colours consistently across all views:
 | 🔴 Red | Insecure / high-risk value |
 | 🔵 Cyan | Informational (timestamps, identifiers) |
 | Dim | Not present / not applicable |
+
+---
+
+## Changelog — 2026-08-31 Evil Twin Update
+
+* **New `5` Rogue AP** — `main.py:538` now fully implements Evil Twin (was `coming soon`). Mirrors `wpf_complete.py` Evil Twin verbatim `hostapd` conf generation, adds portal chooser (`evil_twin.py:113`).
+* **New `evil_twin.py`** — `53268` B, `EvilTwin` class with `GW 10.0.0.1`, `DHCP 10.0.0.2-254 12h`, `Flask :5000`, `mitm :8080`, `PORTAL_BASE`, `list_portals()`, `_load_portal_template()` (`{ssid}` replace), `_patch_bcrypt()`, keepalive.
+* **New `captive-portal-pages/`** — `google/index.html:8094`, `microsoft/index.html:12600` (from `wpf_complete.py:1014`), `instagram/index.html:11789` — self-contained, `POST /login` with `username`/`password` + hidden `ssid`, inline CSS/JS, no external deps.
+* **Fix persistent internet** — `nmcli managed no`, `keepalive` 10s, `bind-dynamic`, `204` for auth probes, `bcrypt` patch, post-login direct NAT fallback — fixes “works 60-180s then no internet” and “no internet after login”.
+* **Fix spam** — keepalive now tracks `_keepalive_handled` pids, auto-restarts `dnsmasq`/`mitmproxy` max 2, logs once to `/tmp/wpf_hostapd.log`/`/tmp/wpf_dnsmasq.log`, filters `bcrypt` noise.
+* **Docs** — this README updated to reflect `5` active, new structure, new deps, Evil Twin details, and troubleshooting.
